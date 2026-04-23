@@ -9,13 +9,33 @@ from langchain.schema import HumanMessage, SystemMessage
 from utils.llm_factory import stream_with_fallback
 
 
-SYSTEM = """You are an expert research analyst and report writer.
-You receive web search results and synthesize them into a comprehensive, well-structured markdown report.
-Always cite sources, highlight key insights, and write in a clear, professional style."""
+SYSTEM = """You are a Fast, Smart Deep Research Agent.
+
+BEHAVIOR RULES:
+- Keep research FAST and FOCUSED
+- Maximum 3 reasoning steps
+- Avoid unnecessary exploration
+- Never expose raw errors — always give alternative answer
+
+OUTPUT FORMAT (always follow this):
+Agent Used: Deep Researcher
+
+Response:
+
+**Direct Answer:**
+<answer here>
+
+**Key Explanation:**
+<brief explanation>
+
+**Quick Insight:**
+<optional short insight>
+
+---
+*Sources used: <number> web sources*"""
 
 
 def _search_duckduckgo(query: str, n: int = 6) -> list:
-    """DuckDuckGo search with retry logic."""
     for attempt in range(3):
         try:
             from duckduckgo_search import DDGS
@@ -23,14 +43,13 @@ def _search_duckduckgo(query: str, n: int = 6) -> list:
                 results = list(ddgs.text(query, max_results=n))
             if results:
                 return results
-        except Exception as e:
+        except Exception:
             if attempt < 2:
                 time.sleep(2 ** attempt)
     return []
 
 
 def _search_google_fallback(query: str, n: int = 5) -> list:
-    """Google search fallback via googlesearch-python."""
     try:
         from googlesearch import search
         results = []
@@ -41,41 +60,36 @@ def _search_google_fallback(query: str, n: int = 5) -> list:
         return []
 
 
-def _search_direct_fallback(query: str) -> list:
-    """Last resort: hardcoded Wikipedia + news search."""
+def _wikipedia_fallback(query: str) -> list:
     try:
         encoded = requests.utils.quote(query)
         url = f"https://en.wikipedia.org/w/api.php?action=opensearch&search={encoded}&limit=3&format=json"
         resp = requests.get(url, timeout=8)
         data = resp.json()
-        results = []
-        for title, link in zip(data[1], data[3]):
-            results.append({"href": link, "title": title, "body": ""})
-        return results
+        return [{"href": link, "title": title, "body": ""}
+                for title, link in zip(data[1], data[3])]
     except Exception:
         return []
 
 
 def web_search(query: str) -> list:
-    """Search with multiple fallbacks: DDG → Google → Wikipedia."""
     results = _search_duckduckgo(query)
     if results:
         return results
     results = _search_google_fallback(query)
     if results:
         return results
-    return _search_direct_fallback(query)
+    return _wikipedia_fallback(query)
 
 
-def scrape(url: str, max_chars: int = 2500) -> str:
+def scrape(url: str, max_chars: int = 2000) -> str:
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        resp = requests.get(url, headers=headers, timeout=7)
+        resp = requests.get(url, headers=headers, timeout=6)
         soup = BeautifulSoup(resp.text, "html.parser")
         for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
             tag.decompose()
-        text = soup.get_text(separator=" ", strip=True)
-        return text[:max_chars]
+        return soup.get_text(separator=" ", strip=True)[:max_chars]
     except Exception:
         return ""
 
@@ -86,67 +100,82 @@ class DeepResearcherAgent:
     MODEL_TAG = "Web Search + Gemini/Groq Synthesis"
 
     def stream(self, message: str, history: list) -> Generator[str, None, None]:
-        yield f"🔍 **Researching:** {message}\n\n"
-        yield "📡 Searching the web (DDG → Google → Wikipedia fallback)...\n\n"
+        yield f"🔍 Searching for: **{message}**\n\n"
 
         results = web_search(message)
 
         if not results:
-            # Fallback: answer from LLM knowledge directly
-            yield "⚠️ Web search unavailable. Answering from model knowledge...\n\n---\n\n"
-            prompt = f"""The web search is unavailable right now. 
-Please answer this research question as thoroughly as possible from your training knowledge.
-Include key facts, context, and insights.
+            yield "⚠️ Web search unavailable — answering from model knowledge...\n\n---\n\n"
+            prompt = f"""Web search failed. Answer this research question from your knowledge.
+Be structured and concise. Maximum 3 key points.
 
 Research Question: {message}
 
-Format your answer as a structured report with sections."""
+Follow this format exactly:
+Agent Used: Deep Researcher
+
+Response:
+
+**Direct Answer:**
+<answer>
+
+**Key Explanation:**
+<explanation>
+
+**Quick Insight:**
+<insight>"""
             yield from stream_with_fallback([
                 SystemMessage(content=SYSTEM),
                 HumanMessage(content=prompt),
-            ], temperature=0.4)
+            ], temperature=0.3)
             return
 
-        yield f"✅ Found **{len(results)} sources** — reading content...\n\n"
+        yield f"✅ Found **{len(results)} sources** — synthesizing...\n\n"
 
         scraped = []
-        for i, r in enumerate(results[:5], 1):
-            url   = r.get("href", "")
-            title = r.get("title", "Unknown")
-            body  = r.get("body", "")
-            yield f"📄 Source {i}: *{title[:65]}*\n"
+        for i, r in enumerate(results[:4], 1):
+            url     = r.get("href", "")
+            title   = r.get("title", "Unknown")
+            body    = r.get("body", "")
             content = scrape(url) if url else body
             scraped.append({
-                "title": title,
-                "url":   url,
-                "content": content or body or "No content available",
+                "title":   title,
+                "url":     url,
+                "content": content or body or "No content",
             })
 
-        yield "\n---\n\n🧠 **Synthesizing research report...**\n\n"
+        yield "🧠 **Writing research report...**\n\n---\n\n"
 
         sources_block = "\n\n".join(
-            f"**[Source {i+1}]** {s['title']}\n"
-            f"URL: {s['url']}\n"
-            f"Content: {s['content']}"
+            f"[Source {i+1}] {s['title']}\nURL: {s['url']}\nContent: {s['content']}"
             for i, s in enumerate(scraped)
         )
 
         prompt = f"""Research Query: {message}
 
-Web Sources Collected:
+Sources:
 {sources_block}
 
-Write a comprehensive, well-structured research report with the following sections:
+Write a fast, focused research response.
+Follow this format exactly:
 
-## 📋 Executive Summary
-## 🔑 Key Findings
-## 📊 Detailed Analysis
-## 🔗 Sources & References  
-## ✅ Conclusion
+Agent Used: Deep Researcher
 
-Use markdown formatting, bullet points, and clear headings."""
+Response:
+
+**Direct Answer:**
+<2-3 sentence direct answer>
+
+**Key Explanation:**
+<bullet points of key findings>
+
+**Quick Insight:**
+<one valuable insight>
+
+---
+*Sources used: {len(scraped)} web sources*"""
 
         yield from stream_with_fallback([
             SystemMessage(content=SYSTEM),
             HumanMessage(content=prompt),
-        ], temperature=0.4)
+        ], temperature=0.3)
