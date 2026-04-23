@@ -17,7 +17,7 @@ document  → questions about uploaded documents, PDFs, files
 youtube   → YouTube video analysis, video questions, transcripts
 researcher → deep research, current events, fact-finding, news, web search"""
 
-AgentKey = Literal["general", "code", "document", "youtube", "researcher"]
+AgentKey = ["general", "code", "document", "youtube", "researcher"]
 
 FAST_RULES = {
     "youtube": ["youtube.com", "youtu.be"],
