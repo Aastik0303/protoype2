@@ -23,7 +23,7 @@ class DocumentRAGAgent:
     MODEL_TAG = "HuggingFace Embeddings + FAISS"
 
     def __init__(self):
-        self.splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+        self.splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=220)
         self.vectorstore = None
 
     def ingest(self, uploaded_file) -> str:
@@ -54,7 +54,7 @@ class DocumentRAGAgent:
         if not self.vectorstore:
             yield "⚠️ No documents loaded. Upload a PDF, TXT, or DOCX in the sidebar."
             return
-        docs = self.vectorstore.similarity_search(message, k=4)
+        docs = self.vectorstore.similarity_search(message, k=5)
         context = "\n\n".join(d.page_content for d in docs)
         prompt = f"""Answer based only on the document context below.
 If the answer is not found in the context, clearly say so.
