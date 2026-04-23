@@ -1,31 +1,44 @@
-"""
-LangGraph-powered orchestrator — auto-routes messages to the best agent.
-"""
-import sys
-import os
+import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from typing import TypedDict, Literal
+
+from typing import Literal
 from langgraph.graph import StateGraph, END
 from langchain_groq import ChatGroq
 from langchain.schema import HumanMessage, SystemMessage
+from typing import TypedDict
 import streamlit as st
 
-ROUTER_PROMPT = """You are an agent router. Reply with EXACTLY ONE of these words — nothing else:
-general   → casual chat, general knowledge, opinions, questions
-code      → writing code, debugging, programming, algorithms, scripts
-document  → questions about uploaded documents, PDFs, files
-youtube   → YouTube video analysis, video questions, transcripts
-researcher → deep research, current events, fact-finding, news, web search"""
+ROUTER_PROMPT = """You are an Advanced AI Orchestrator responsible for managing multiple specialized agents.
 
-AgentKey = ["general", "code", "document", "youtube", "researcher"]
+AGENT SELECTION LOGIC — Choose ONLY ONE:
+- general    → normal conversation, general questions, simple facts
+- code       → writing code, debugging, programming, algorithms
+- document   → questions about uploaded documents, PDFs, files
+- youtube    → YouTube links or questions about a video
+- researcher → complex research, unknown topics, multi-step analysis
+- data       → CSV, datasets, numbers, statistics, data analysis
+
+SPEED RULES:
+- Do NOT overthink
+- Maximum 2 steps of reasoning
+- If obvious → answer immediately
+
+Reply with EXACTLY ONE word — nothing else:
+general / code / document / youtube / researcher / data"""
 
 FAST_RULES = {
-    "youtube": ["youtube.com", "youtu.be"],
-    "code": ["debug", "code", "function", "bug", "error", "script",
-             "python", "javascript", "typescript", "sql", "algorithm", "compile", "syntax"],
+    "youtube":    ["youtube.com", "youtu.be"],
+    "code":       ["debug", "code", "function", "bug", "error", "script",
+                   "python", "javascript", "typescript", "sql", "algorithm",
+                   "compile", "syntax", "class", "import", "def "],
     "researcher": ["research", "latest", "current news", "what happened",
-                   "find information", "analyze", "report on", "search for"],
-    "document": ["in the document", "from the pdf", "in the file", "uploaded"],
+                   "find information", "analyze", "report on", "search for",
+                   "who is", "what is the history", "explain in detail"],
+    "document":   ["in the document", "from the pdf", "in the file",
+                   "uploaded", "from the doc"],
+    "data":       ["dataset", "csv", "dataframe", "statistics", "correlation",
+                   "regression", "machine learning", "ml model", "plot",
+                   "chart", "graph", "analyze data", "data analysis"],
 }
 
 
@@ -50,19 +63,23 @@ def build_graph():
     )
 
     def router_node(state: State) -> State:
+        # Fast path first — no LLM call needed
         fast = _fast_route(state["message"])
         if fast:
             return {**state, "agent": fast}
+
+        # LLM fallback for ambiguous queries
         try:
             result = llm.invoke([
                 SystemMessage(content=ROUTER_PROMPT),
                 HumanMessage(content=state["message"]),
             ])
             key = result.content.strip().lower().split()[0]
-            if key in ["general", "code", "document", "youtube", "researcher"]:
+            if key in ["general", "code", "document", "youtube", "researcher", "data"]:
                 return {**state, "agent": key}
         except Exception:
             pass
+
         return {**state, "agent": "general"}
 
     g = StateGraph(State)
