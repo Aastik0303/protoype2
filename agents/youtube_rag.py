@@ -18,153 +18,146 @@ def _extract_id(url: str) -> str:
     raise ValueError(f"Cannot extract video ID from: {url}")
 
 
-def _get_transcript_primary(video_id: str) -> str:
-    """Method 1: youtube-transcript-api"""
-    try:
-        from youtube_transcript_api import YouTubeTranscriptApi
-        from youtube_transcript_api.formatters import TextFormatter
-        transcript = YouTubeTranscriptApi.get_transcript(
-            video_id,
-            languages=["en", "en-US", "en-GB", "a.en"]
-        )
-        return TextFormatter().format_transcript(transcript)
-    except Exception as e:
-        raise RuntimeError(f"transcript-api failed: {e}")
+def _transcript_api(video_id: str) -> str:
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api.formatters import TextFormatter
+    transcript = YouTubeTranscriptApi.get_transcript(
+        video_id, languages=["en", "en-US", "en-GB", "a.en"]
+    )
+    return TextFormatter().format_transcript(transcript)
 
 
-def _get_transcript_scrape(video_id: str) -> str:
-    """Method 2: Scrape timedtext from YouTube's internal API"""
-    try:
-        url = f"https://www.youtube.com/watch?v={video_id}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        resp = requests.get(url, headers=headers, timeout=10)
-        html = resp.text
-
-        # Find timedtext URL in page source
-        import json
-        match = re.search(r'"captionTracks":\s*(\[.*?\])', html)
-        if not match:
-            raise RuntimeError("No captions found in page source")
-
-        tracks = json.loads(match.group(1))
-        # Prefer English
-        track_url = None
-        for track in tracks:
-            if track.get("languageCode", "").startswith("en"):
-                track_url = track["baseUrl"]
-                break
-        if not track_url and tracks:
-            track_url = tracks[0]["baseUrl"]
-        if not track_url:
-            raise RuntimeError("No caption track URL found")
-
-        xml_resp = requests.get(track_url, timeout=10)
-        # Parse XML captions
-        texts = re.findall(r"<text[^>]*>(.*?)</text>", xml_resp.text, re.DOTALL)
-        import html as html_module
-        clean = [html_module.unescape(re.sub(r"<[^>]+>", "", t)).strip() for t in texts]
-        return " ".join(filter(None, clean))
-    except Exception as e:
-        raise RuntimeError(f"scrape failed: {e}")
+def _transcript_scrape(video_id: str) -> str:
+    import json, html as html_module
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    resp = requests.get(url, headers=headers, timeout=10)
+    match = re.search(r'"captionTracks":\s*(\[.*?\])', resp.text)
+    if not match:
+        raise RuntimeError("No captions in page source")
+    tracks = json.loads(match.group(1))
+    track_url = next(
+        (t["baseUrl"] for t in tracks if t.get("languageCode", "").startswith("en")),
+        tracks[0]["baseUrl"] if tracks else None
+    )
+    if not track_url:
+        raise RuntimeError("No caption track URL")
+    xml = requests.get(track_url, timeout=10).text
+    texts = re.findall(r"<text[^>]*>(.*?)</text>", xml, re.DOTALL)
+    return " ".join(
+        html_module.unescape(re.sub(r"<[^>]+>", "", t)).strip()
+        for t in texts if t.strip()
+    )
 
 
-def _get_transcript_ytdlp(video_id: str) -> str:
-    """Method 3: yt-dlp subtitles"""
-    try:
-        import yt_dlp
-        import tempfile, json, glob
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            ydl_opts = {
-                "skip_download": True,
-                "writesubtitles": True,
-                "writeautomaticsub": True,
-                "subtitleslangs": ["en", "en-US"],
-                "subtitlesformat": "vtt",
-                "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
-                "quiet": True,
-            }
-            url = f"https://www.youtube.com/watch?v={video_id}"
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-
-            vtt_files = glob.glob(os.path.join(tmpdir, "*.vtt"))
-            if not vtt_files:
-                raise RuntimeError("No subtitle files downloaded")
-
-            with open(vtt_files[0], encoding="utf-8") as f:
-                vtt = f.read()
-
-            # Strip VTT tags and timestamps
-            lines = []
-            for line in vtt.split("\n"):
-                line = line.strip()
-                if line.startswith("WEBVTT") or "-->" in line or not line:
-                    continue
-                clean = re.sub(r"<[^>]+>", "", line)
-                if clean and clean not in lines[-3:] if lines else True:
-                    lines.append(clean)
-            return " ".join(lines)
-    except Exception as e:
-        raise RuntimeError(f"yt-dlp failed: {e}")
+def _transcript_ytdlp(video_id: str) -> str:
+    import yt_dlp, tempfile, glob
+    with tempfile.TemporaryDirectory() as tmpdir:
+        opts = {
+            "skip_download": True, "writesubtitles": True,
+            "writeautomaticsub": True, "subtitleslangs": ["en"],
+            "subtitlesformat": "vtt",
+            "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
+            "quiet": True,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+        vtt_files = glob.glob(os.path.join(tmpdir, "*.vtt"))
+        if not vtt_files:
+            raise RuntimeError("No subtitle files downloaded")
+        with open(vtt_files[0], encoding="utf-8") as f:
+            vtt = f.read()
+    lines = []
+    for line in vtt.split("\n"):
+        line = line.strip()
+        if line.startswith("WEBVTT") or "-->" in line or not line:
+            continue
+        clean = re.sub(r"<[^>]+>", "", line)
+        if clean and (not lines or clean != lines[-1]):
+            lines.append(clean)
+    return " ".join(lines)
 
 
 def get_transcript(video_id: str) -> tuple[str, str]:
-    """Try all methods in order, return (transcript_text, method_used)."""
     errors = []
-
-    for method_name, method_fn in [
-        ("youtube-transcript-api", _get_transcript_primary),
-        ("page-scraping",          _get_transcript_scrape),
-        ("yt-dlp",                 _get_transcript_ytdlp),
+    for name, fn in [
+        ("youtube-transcript-api", _transcript_api),
+        ("page-scraping",          _transcript_scrape),
+        ("yt-dlp",                 _transcript_ytdlp),
     ]:
         try:
-            text = method_fn(video_id)
+            text = fn(video_id)
             if text and len(text.strip()) > 100:
-                return text, method_name
+                return text, name
         except Exception as e:
-            errors.append(f"{method_name}: {e}")
-
-    raise RuntimeError(
-        "All transcript methods failed:\n" + "\n".join(errors)
-    )
+            errors.append(f"{name}: {e}")
+    raise RuntimeError("All transcript methods failed:\n" + "\n".join(errors))
 
 
 class YouTubeRAGAgent:
     NAME = "YouTube RAG"
     ICON = "▶️"
-    MODEL_TAG = "HuggingFace Embeddings + Transcript"
+    MODEL_TAG = "Transcript + HuggingFace + RAG"
+
+    SYSTEM = """You are a YouTube Video Analysis Agent.
+
+BEHAVIOR:
+- Extract key information from video transcript
+- If transcript fails → gracefully provide summary from title/context
+- NEVER crash or show raw errors
+- Sound human and helpful
+
+OUTPUT FORMAT (always follow):
+Agent Used: YouTube RAG
+
+Response:
+
+**Video Summary:**
+<2-3 sentence summary>
+
+**Key Points:**
+- <point 1>
+- <point 2>
+- <point 3>
+
+**Answer to your question:**
+<direct answer based on transcript>"""
 
     def __init__(self):
-        self.splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
+        self.splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
         self.vectorstore = None
         self.loaded_url = None
         self.method_used = None
 
     def ingest(self, url: str) -> str:
         vid = _extract_id(url)
-        transcript, method = get_transcript(vid)
-        doc = Document(page_content=transcript, metadata={"source": url, "video_id": vid})
-        chunks = self.splitter.split_documents([doc])
-        self.vectorstore = FAISS.from_documents(chunks, get_embeddings())
-        self.loaded_url = url
-        self.method_used = method
-        return (f"✅ YouTube transcript loaded via **{method}** — "
-                f"{len(chunks)} chunks indexed.\n"
-                f"Video: `{vid}`")
+        try:
+            transcript, method = get_transcript(vid)
+            doc = Document(page_content=transcript, metadata={"source": url})
+            chunks = self.splitter.split_documents([doc])
+            self.vectorstore = FAISS.from_documents(chunks, get_embeddings())
+            self.loaded_url = url
+            self.method_used = method
+            return (f"✅ Transcript loaded via **{method}** — "
+                    f"{len(chunks)} chunks ready.\nVideo ID: `{vid}`")
+        except Exception as e:
+            return f"⚠️ Unable to fetch transcript: {e}\nYou can still ask questions — I'll answer from context."
 
     def stream(self, message: str, history: list) -> Generator[str, None, None]:
         if not self.vectorstore:
             yield "⚠️ No video loaded. Paste a YouTube URL in the sidebar and click **Load Video**."
             return
+
         docs = self.vectorstore.similarity_search(message, k=5)
         context = "\n\n".join(d.page_content for d in docs)
-        prompt = f"""You are analyzing a YouTube video transcript. Answer the question based on what was said.
 
-Transcript Excerpts:
+        prompt = f"""Video transcript context:
 {context}
 
-Question: {message}
+User question: {message}
 
-Give a clear, detailed answer based on the video content."""
-        yield from stream_with_fallback([HumanMessage(content=prompt)], temperature=0.3)
+Follow the output format from your system instructions exactly."""
+
+        yield from stream_with_fallback([
+            HumanMessage(content=self.SYSTEM + "\n\n" + prompt)
+        ], temperature=0.3)
