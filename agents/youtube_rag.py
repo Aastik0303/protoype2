@@ -136,7 +136,7 @@ class YouTubeRAGAgent:
     MODEL_TAG = "HuggingFace Embeddings + Transcript"
 
     def __init__(self):
-        self.splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+        self.splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
         self.vectorstore = None
         self.loaded_url = None
         self.method_used = None
