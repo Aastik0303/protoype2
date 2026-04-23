@@ -1,0 +1,38 @@
+streamlit>=1.35.0
+
+# LangChain
+langchain==0.2.1
+langchain-core==0.2.1
+langchain-community==0.2.1
+langchain-google-genai==1.0.5
+langchain-groq==0.1.4
+langgraph==0.1.5
+
+# Vector Store
+faiss-cpu==1.8.0
+
+# HuggingFace Embeddings
+sentence-transformers==3.0.0
+huggingface-hub==0.23.4
+
+# Document Loaders
+pypdf==4.2.0
+docx2txt==0.8
+
+# YouTube — use yt-dlp + whisper fallback instead of transcript api
+yt-dlp==2024.5.27
+youtube-transcript-api==0.6.2
+
+# Web / Research
+requests==2.32.2
+beautifulsoup4==4.12.3
+duckduckgo-search==6.2.1
+googlesearch-python==1.2.3
+
+# Data Analysis
+pandas==2.2.2
+numpy==1.26.4
+matplotlib==3.9.0
+seaborn==0.13.2
+openpyxl==3.1.4
+scipy==1.13.0
