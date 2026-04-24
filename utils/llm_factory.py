@@ -85,7 +85,7 @@ def invoke_with_fallback(messages: list, temperature: float = 0.7) -> str:
         if is_overload:
             # One immediate retry with fresh instance
             fresh_llm = ChatGoogleGenerativeAI(
-                model=st.secrets.get("GOOGLE_MODEL", "gemini-2.5-flash-preview-04-17"),
+                model=st.secrets.get("GOOGLE_MODEL", "gemini-2.5-flash"),
                 google_api_key=st.secrets["GOOGLE_API_KEY"],
                 temperature=temperature,
                 streaming=True,
