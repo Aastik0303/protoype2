@@ -10,7 +10,7 @@ from typing import Iterator
 def get_gemini(temperature: float = 0.7):
     """Cached Gemini instance — created ONCE, reused forever."""
     return ChatGoogleGenerativeAI(
-        model=st.secrets.get("GOOGLE_MODEL", "gemini-2.5-flash-preview-04-17"),
+        model=st.secrets.get("GOOGLE_MODEL", "gemini-2.5-flash"),
         google_api_key=st.secrets["GOOGLE_API_KEY"],
         temperature=temperature,
         streaming=True,
