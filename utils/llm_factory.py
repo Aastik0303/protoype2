@@ -9,7 +9,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 def get_llm():
     """Created once, reused forever."""
     return ChatGoogleGenerativeAI(
-        model=st.secrets.get("GOOGLE_MODEL", "gemini-2.5-flash-preview-04-17"),
+        model=st.secrets.get("GOOGLE_MODEL", "gemini-2.5-flash"),
         google_api_key=st.secrets["GOOGLE_API_KEY"],
         streaming=True,
         convert_system_message_to_human=True,
