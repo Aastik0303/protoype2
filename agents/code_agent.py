@@ -2,7 +2,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Generator
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
 import streamlit as st
 
@@ -10,7 +10,7 @@ import streamlit as st
 class CodeAgent:
     NAME = "Code Agent"
     ICON = "💻"
-    MODEL_TAG = "Groq Llama 3.3 70B"
+    MODEL_TAG = "gemini-2.5-flash"
 
     SYSTEM = """You are an elite software engineer and debugging expert.
 - Write clean, efficient, well-documented code in any language
@@ -25,7 +25,7 @@ Think carefully before writing any code."""
     def _get_llm(self):
         if self._llm is None:
             self._llm = ChatGroq(
-                model=st.secrets.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                model=st.secrets.get("GROQ_MODEL", "gemini-2.5-flash"),
                 groq_api_key=st.secrets["GROQ_API_KEY"],
                 temperature=0.1,
                 streaming=True,
