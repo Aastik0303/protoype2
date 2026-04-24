@@ -9,7 +9,7 @@ from utils.llm_factory import stream_with_fallback
 class GeneralChatbotAgent:
     NAME = "General Chatbot"
     ICON = "🤖"
-    MODEL_TAG = "Gemini 2.5 Flash / Groq Fallback"
+    MODEL_TAG = "Gemini 2.5 Flash"
 
     SYSTEM = """You are a helpful, smart, and friendly AI assistant.
 
